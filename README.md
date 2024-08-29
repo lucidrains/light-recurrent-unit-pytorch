@@ -24,6 +24,21 @@ hidden = torch.randn(2, 256)
 next_hidden = lru_cell(x, hidden) # (2, 256)
 ```
 
+Single layer
+
+```python
+import torch
+from light_recurrent_unit_pytorch import LightRecurrentUnitLayer
+
+lru_cell = LightRecurrentUnitLayer(256)
+
+x = torch.randn(2, 1024, 256)
+hidden = torch.randn(2, 256)
+
+output = lru_cell(x, hidden) # (2, 1024, 256)
+assert x.shape == output.shape
+```
+
 ## Citations
 
 ```bibtex

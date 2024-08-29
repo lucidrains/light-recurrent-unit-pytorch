@@ -2,7 +2,8 @@ from __future__ import annotations
 
 import torch
 from torch import Tensor
-from torch.nn import Linear, ModuleList
+import torch.nn.functional as F
+from torch.nn import Parameter, Linear, Module, ModuleList
 from torch.jit import ScriptModule, script_method
 
 # a single LRU cell
@@ -25,9 +26,7 @@ class LightRecurrentUnitCell(ScriptModule):
 
         # derive the next hidden as well as the forget gate contribution from the input
 
-        next_input, input_forget = self.input_proj(x).chunk(2, dim = -1)
-
-        next_input = torch.tanh(next_input)
+        next_hidden, input_forget = self.input_proj(x).chunk(2, dim = -1)
 
         # get the forget gate contribution from previous hidden
 
@@ -39,7 +38,7 @@ class LightRecurrentUnitCell(ScriptModule):
 
         # next hidden = hidden * (1. - forget_gate) + next_hidden * forget_gate
 
-        next_hidden = hidden.lerp(next_input, forget_gate)
+        next_hidden = hidden.lerp(next_hidden.tanh(), forget_gate)
 
         return next_hidden
 
@@ -86,3 +85,27 @@ class LightRecurrentUnit(ScriptModule):
             x = layer(x)
 
         return x
+
+# LRU Block
+
+class RMSNorm(Module):
+    def __init__(self, dim):
+        super().__init__()
+        self.scale = dim ** 0.5
+        self.gamma = Parameter(torch.zeros(dim))
+
+    def forward(self, x):
+        return F.normalize(x, dim = -1) * self.scale * (self.gamma + 1.)
+
+class LightRecurrentUnitBlock(Module):
+    def __init__(
+        self,
+        dim,
+        depth = 1
+    ):
+        super().__init__()
+        self.norm = RMSNorm(dim)
+        self.lru = LightRecurrentUnit(dim = dim, depth = depth)
+
+    def forward(self, x):
+        return self.lru(self.norm(x)) + x

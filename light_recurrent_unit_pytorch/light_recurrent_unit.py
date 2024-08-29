@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import torch
 from torch import Tensor
-from torch.nn import Linear
+from torch.nn import Linear, ModuleList
 from torch.jit import ScriptModule, script_method
 
 # a single LRU cell
@@ -46,7 +46,7 @@ class LightRecurrentUnitCell(ScriptModule):
 # LRU layer
 
 class LightRecurrentUnitLayer(ScriptModule):
-    def __init__(self, dim,):
+    def __init__(self, dim):
         super().__init__()
         self.cell = LightRecurrentUnitCell(dim)
 
@@ -56,7 +56,8 @@ class LightRecurrentUnitLayer(ScriptModule):
         x: Tensor,
         hidden: Tensor | None = None
     ) -> Tensor:
-        # assume always (batch, time, dim)
+
+        # batch first always (batch, time, dim)
 
         inputs = x.unbind(dim = 1)
         next_hiddens: list[Tensor] = []
@@ -66,3 +67,22 @@ class LightRecurrentUnitLayer(ScriptModule):
             next_hiddens.append(hidden)
 
         return torch.stack(next_hiddens, dim = 1)
+
+# Stacked LRU
+
+class LightRecurrentUnit(ScriptModule):
+    def __init__(
+        self,
+        dim,
+        depth = 1
+    ):
+        super().__init__()
+        self.layers = ModuleList([LightRecurrentUnitLayer(dim) for _ in range(depth)])
+
+    @script_method
+    def forward(self, x: Tensor) -> Tensor:
+
+        for layer in self.layers:
+            x = layer(x)
+
+        return x

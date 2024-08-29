@@ -38,6 +38,21 @@ output = lru_layer(x) # (2, 1024, 256)
 assert x.shape == output.shape
 ```
 
+Stacked
+
+```python
+import torch
+from light_recurrent_unit_pytorch import LightRecurrentUnit
+
+lru = LightRecurrentUnit(256, depth = 4)
+
+x = torch.randn(2, 1024, 256)
+
+out = lru(x)
+
+assert out.shape == x.shape
+```
+
 ## Citations
 
 ```bibtex

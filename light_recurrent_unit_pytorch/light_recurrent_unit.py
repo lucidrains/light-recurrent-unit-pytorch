@@ -1,9 +1,9 @@
 from __future__ import annotations
 
 import torch
-from torch import Tensor
+from torch import nn, Tensor
 import torch.nn.functional as F
-from torch.nn import Parameter, Linear, Module, ModuleList
+from torch.nn import Linear, Module, ModuleList
 from torch.jit import ScriptModule, script_method
 
 # a single LRU cell
@@ -92,7 +92,7 @@ class RMSNorm(Module):
     def __init__(self, dim):
         super().__init__()
         self.scale = dim ** 0.5
-        self.gamma = Parameter(torch.zeros(dim))
+        self.gamma = nn.Parameter(torch.zeros(dim))
 
     def forward(self, x):
         return F.normalize(x, dim = -1) * self.scale * (self.gamma + 1.)
@@ -101,11 +101,32 @@ class LightRecurrentUnitBlock(Module):
     def __init__(
         self,
         dim,
-        depth = 1
+        depth = 1,
+        has_ff_block = False,
+        ff_expansion_factor = 4
     ):
         super().__init__()
         self.norm = RMSNorm(dim)
         self.lru = LightRecurrentUnit(dim = dim, depth = depth)
 
+        self.has_ff_block = has_ff_block
+
+        if not has_ff_block:
+            return
+
+        dim_ff_inner = int(dim * ff_expansion_factor)
+
+        self.ff = nn.Sequential(
+            RMSNorm(dim),
+            Linear(dim, dim_ff_inner),
+            nn.GELU(),
+            Linear(dim_ff_inner, dim)
+        )
+
     def forward(self, x):
-        return self.lru(self.norm(x)) + x
+        x = self.lru(self.norm(x)) + x
+
+        if not self.has_ff_block:
+            return x
+
+        return self.ff(x) + x

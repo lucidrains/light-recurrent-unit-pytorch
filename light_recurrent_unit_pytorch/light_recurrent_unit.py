@@ -5,11 +5,6 @@ from torch import Tensor
 from torch.nn import Linear
 from torch.jit import ScriptModule, script_method
 
-# helper functions
-
-def exists(v):
-    return v is not None
-
 # a single LRU cell
 
 class LightRecurrentUnitCell(ScriptModule):
@@ -22,8 +17,11 @@ class LightRecurrentUnitCell(ScriptModule):
     def forward(
         self,
         x: Tensor,
-        hidden: Tensor
+        hidden: Tensor | None = None
     ):
+
+        if hidden is None:
+            hidden = torch.zeros_like(x)
 
         # derive the next hidden as well as the forget gate contribution from the input
 
@@ -56,7 +54,7 @@ class LightRecurrentUnitLayer(ScriptModule):
     def forward(
         self,
         x: Tensor,
-        hidden: Tensor
+        hidden: Tensor | None = None
     ) -> Tensor:
         # assume always (batch, time, dim)
 
@@ -64,7 +62,7 @@ class LightRecurrentUnitLayer(ScriptModule):
         next_hiddens: list[Tensor] = []
 
         for timestep_input in inputs:
-            next_hidden = self.cell(timestep_input, hidden)
-            next_hiddens.append(next_hidden)
+            hidden = self.cell(timestep_input, hidden)
+            next_hiddens.append(hidden)
 
         return torch.stack(next_hiddens, dim = 1)

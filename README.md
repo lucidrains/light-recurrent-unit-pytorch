@@ -30,12 +30,11 @@ Single layer
 import torch
 from light_recurrent_unit_pytorch import LightRecurrentUnitLayer
 
-lru_cell = LightRecurrentUnitLayer(256)
+lru_layer = LightRecurrentUnitLayer(256)
 
 x = torch.randn(2, 1024, 256)
-hidden = torch.randn(2, 256)
 
-output = lru_cell(x, hidden) # (2, 1024, 256)
+output = lru_layer(x) # (2, 1024, 256)
 assert x.shape == output.shape
 ```
 

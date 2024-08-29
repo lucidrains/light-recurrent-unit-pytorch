@@ -1,6 +1,6 @@
 <img src="./lru.png" width="400px"></img>
 
-## Light Recurrent Unit - Pytorch (wip)
+## Light Recurrent Unit - Pytorch
 
 Implementation of the <a href="https://www.mdpi.com/2079-9292/13/16/3204">Light Recurrent Unit</a> in Pytorch
 

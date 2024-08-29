@@ -4,6 +4,26 @@
 
 Implementation of the <a href="https://www.mdpi.com/2079-9292/13/16/3204">Light Recurrent Unit</a> in Pytorch
 
+## Install
+
+```bash
+$ pip install light-recurrent-unit-pytorch
+```
+
+## Usage
+
+```python
+import torch
+from light_recurrent_unit_pytorch import LightRecurrentUnitCell
+
+lru_cell = LightRecurrentUnitCell(256)
+
+x = torch.randn(1, 1024, 256)
+hidden = torch.randn(1, 1024, 256)
+
+next_hidden = lru_cell(x, hidden) # (1, 1024, 256)
+```
+
 ## Citations
 
 ```bibtex

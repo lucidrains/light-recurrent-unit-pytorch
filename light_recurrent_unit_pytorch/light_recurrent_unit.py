@@ -6,13 +6,30 @@ import torch.nn.functional as F
 from torch.nn import Linear, Module, ModuleList
 from torch.jit import ScriptModule, script_method
 
+# helpers
+
+def exists(v):
+    return v is not None
+
+def default(v, d):
+    return v if exists(v) else d
+
 # a single LRU cell
 
 class LightRecurrentUnitCell(ScriptModule):
-    def __init__(self, dim):
+    def __init__(
+        self,
+        dim,
+        dim_hidden = None,
+        learned_init_hidden = False
+    ):
         super().__init__()
-        self.input_proj = Linear(dim, dim * 2, bias = False)
-        self.hidden_proj = Linear(dim, dim)
+        dim_hidden = default(dim_hidden, dim)
+
+        self.input_proj = Linear(dim, dim_hidden * 2, bias = False)
+        self.hidden_proj = Linear(dim_hidden, dim_hidden)
+
+        self.init_hidden = nn.Parameter(torch.zeros(dim_hidden), requires_grad = learned_init_hidden)
 
     @script_method
     def forward(
@@ -22,7 +39,7 @@ class LightRecurrentUnitCell(ScriptModule):
     ):
 
         if hidden is None:
-            hidden = torch.zeros_like(x)
+            hidden = self.init_hidden
 
         # derive the next hidden as well as the forget gate contribution from the input
 
@@ -45,9 +62,14 @@ class LightRecurrentUnitCell(ScriptModule):
 # LRU layer
 
 class LightRecurrentUnitLayer(ScriptModule):
-    def __init__(self, dim):
+    def __init__(
+        self,
+        dim,
+        dim_hidden = None,
+        learned_init_hidden = False
+    ):
         super().__init__()
-        self.cell = LightRecurrentUnitCell(dim)
+        self.cell = LightRecurrentUnitCell(dim, dim_hidden, learned_init_hidden = learned_init_hidden)
 
     @script_method
     def forward(
@@ -73,13 +95,17 @@ class LightRecurrentUnit(ScriptModule):
     def __init__(
         self,
         dim,
-        depth = 1
+        depth = 1,
+        learned_init_hidden = False
     ):
         super().__init__()
-        self.layers = ModuleList([LightRecurrentUnitLayer(dim) for _ in range(depth)])
+        self.layers = ModuleList([LightRecurrentUnitLayer(dim, learned_init_hidden = learned_init_hidden) for _ in range(depth)])
 
     @script_method
-    def forward(self, x: Tensor) -> Tensor:
+    def forward(
+        self,
+        x: Tensor
+    ) -> Tensor:
 
         for layer in self.layers:
             x = layer(x)
@@ -103,11 +129,12 @@ class LightRecurrentUnitBlock(Module):
         dim,
         depth = 1,
         has_ff_block = False,
-        ff_expansion_factor = 4
+        ff_expansion_factor = 4,
+        learned_init_hidden = False
     ):
         super().__init__()
         self.norm = RMSNorm(dim)
-        self.lru = LightRecurrentUnit(dim = dim, depth = depth)
+        self.lru = LightRecurrentUnit(dim = dim, depth = depth, learned_init_hidden = learned_init_hidden)
 
         self.has_ff_block = has_ff_block
 

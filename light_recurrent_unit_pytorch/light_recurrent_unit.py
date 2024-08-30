@@ -119,12 +119,18 @@ class GatedLightRecurrentUnit(ScriptModule):
         self,
         dim,
         depth = 1,
-        learned_init_hidden = False
+        learned_init_hidden = False,
+        num_layers_per_depth = 2
     ):
         super().__init__()
-
         self.gate = LightRecurrentUnitCell(dim)
-        self.layers = ModuleList([LightRecurrentUnitLayer(dim, learned_init_hidden = learned_init_hidden) for _ in range(depth)])
+
+        layers = []
+        for _ in range(depth):
+            layer = nn.Sequential(*[LightRecurrentUnitLayer(dim, learned_init_hidden = learned_init_hidden) for _ in range(num_layers_per_depth)])
+            layers.append(layer)
+
+        self.layers = ModuleList(layers)
 
     @script_method
     def forward(

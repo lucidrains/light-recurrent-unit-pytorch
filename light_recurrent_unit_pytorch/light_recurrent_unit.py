@@ -112,6 +112,31 @@ class LightRecurrentUnit(ScriptModule):
 
         return x
 
+# an improvised variant where stacked LRU has residual at each layer but gated with an LRU itself
+
+class GatedLightRecurrentUnit(ScriptModule):
+    def __init__(
+        self,
+        dim,
+        depth = 1,
+        learned_init_hidden = False
+    ):
+        super().__init__()
+
+        self.gate = LightRecurrentUnitCell(dim)
+        self.layers = ModuleList([LightRecurrentUnitLayer(dim, learned_init_hidden = learned_init_hidden) for _ in range(depth)])
+
+    @script_method
+    def forward(
+        self,
+        x: Tensor
+    ) -> Tensor:
+
+        for layer in self.layers:
+            x = self.gate(layer(x), x)
+
+        return x
+
 # LRU Block
 
 class RMSNorm(Module):
@@ -130,11 +155,15 @@ class LightRecurrentUnitBlock(Module):
         depth = 1,
         has_ff_block = False,
         ff_expansion_factor = 4,
-        learned_init_hidden = False
+        learned_init_hidden = False,
+        depth_gated_lru = True
     ):
         super().__init__()
         self.norm = RMSNorm(dim)
-        self.lru = LightRecurrentUnit(dim = dim, depth = depth, learned_init_hidden = learned_init_hidden)
+
+        lru_klass = GatedLightRecurrentUnit if depth_gated_lru else LightRecurrentUnit
+
+        self.lru = lru_klass(dim = dim, depth = depth, learned_init_hidden = learned_init_hidden)
 
         self.has_ff_block = has_ff_block
 

@@ -21,13 +21,17 @@ class LightRecurrentUnitCell(ScriptModule):
         self,
         dim,
         dim_hidden = None,
+        *,
+        proj_input = True,
         learned_init_hidden = False
     ):
         super().__init__()
         dim_hidden = default(dim_hidden, dim)
 
-        self.input_proj = Linear(dim, dim_hidden * 2, bias = False)
-        self.hidden_proj = Linear(dim_hidden, dim_hidden)
+        self.to_input = nn.Sequential(Linear(dim, dim_hidden, bias = False), nn.Tanh()) if proj_input else nn.Identity()
+
+        self.to_input_forget = Linear(dim, dim_hidden, bias = False)
+        self.to_hidden_forget = Linear(dim_hidden, dim_hidden)
 
         self.init_hidden = nn.Parameter(torch.zeros(dim_hidden), requires_grad = learned_init_hidden)
 
@@ -43,11 +47,11 @@ class LightRecurrentUnitCell(ScriptModule):
 
         # derive the next hidden as well as the forget gate contribution from the input
 
-        next_hidden, input_forget = self.input_proj(x).chunk(2, dim = -1)
+        next_hidden, input_forget = self.to_input(x), self.to_input_forget(x)
 
         # get the forget gate contribution from previous hidden
 
-        hidden_forget = self.hidden_proj(hidden)
+        hidden_forget = self.to_hidden_forget(hidden)
 
         # calculate forget gate
 
@@ -66,10 +70,12 @@ class LightRecurrentUnitLayer(ScriptModule):
         self,
         dim,
         dim_hidden = None,
+        *,
+        proj_input = True,
         learned_init_hidden = False
     ):
         super().__init__()
-        self.cell = LightRecurrentUnitCell(dim, dim_hidden, learned_init_hidden = learned_init_hidden)
+        self.cell = LightRecurrentUnitCell(dim, dim_hidden, proj_input = proj_input, learned_init_hidden = learned_init_hidden)
 
     @script_method
     def forward(
@@ -95,11 +101,19 @@ class LightRecurrentUnit(ScriptModule):
     def __init__(
         self,
         dim,
+        *,
         depth = 1,
+        proj_input: bool | Tuple[bool, ...] = True,
         learned_init_hidden = False
     ):
         super().__init__()
-        self.layers = ModuleList([LightRecurrentUnitLayer(dim, learned_init_hidden = learned_init_hidden) for _ in range(depth)])
+
+        if not isinstance(proj_input, tuple):
+            proj_input = (proj_input,) * depth
+
+        assert len(proj_input) == depth
+
+        self.layers = ModuleList([LightRecurrentUnitLayer(dim, proj_input = layer_proj_input, learned_init_hidden = learned_init_hidden) for layer_proj_input in proj_input])
 
     @script_method
     def forward(

@@ -16,12 +16,12 @@ $ pip install light-recurrent-unit-pytorch
 import torch
 from light_recurrent_unit_pytorch import LightRecurrentUnitCell
 
-lru_cell = LightRecurrentUnitCell(256)
+cell = LightRecurrentUnitCell(256)
 
 x = torch.randn(2, 256)
 hidden = torch.randn(2, 256)
 
-next_hidden = lru_cell(x, hidden) # (2, 256)
+next_hidden = cell(x, hidden) # (2, 256)
 ```
 
 Single layer
@@ -30,12 +30,13 @@ Single layer
 import torch
 from light_recurrent_unit_pytorch import LightRecurrentUnitLayer
 
-lru_layer = LightRecurrentUnitLayer(256)
+layer = LightRecurrentUnitLayer(256)
 
 x = torch.randn(2, 1024, 256)
 
-output = lru_layer(x) # (2, 1024, 256)
-assert x.shape == output.shape
+out = layer(x) # (2, 1024, 256)
+
+assert out.shape == x.shape
 ```
 
 Stacked
@@ -48,7 +49,7 @@ lru = LightRecurrentUnit(256, depth = 4)
 
 x = torch.randn(2, 1024, 256)
 
-out = lru(x)
+out = lru(x) # (2, 1024, 256)
 
 assert out.shape == x.shape
 ```

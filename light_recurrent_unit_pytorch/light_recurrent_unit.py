@@ -33,7 +33,14 @@ class LightRecurrentUnitCell(ScriptModule):
         self.to_input_forget = Linear(dim, dim_hidden, bias = False)
         self.to_hidden_forget = Linear(dim_hidden, dim_hidden)
 
-        self.init_hidden = nn.Parameter(torch.zeros(dim_hidden), requires_grad = learned_init_hidden)
+        # initial hidden
+
+        init_hidden = torch.zeros(dim_hidden)
+
+        if learned_init_hidden:
+            self.register_parameter(init_hidden)
+        else:
+            self.register_buffer('init_hidden', init_hidden)
 
     @script_method
     def forward(

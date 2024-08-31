@@ -40,7 +40,7 @@ class LightRecurrentUnitCell(ScriptModule):
         self,
         x: Tensor,
         hidden: Tensor | None = None
-    ):
+    ) -> Tensor:
 
         if hidden is None:
             hidden = self.init_hidden
@@ -118,20 +118,34 @@ class LightRecurrentUnit(ScriptModule):
     @script_method
     def forward(
         self,
-        x: Tensor
-    ) -> Tensor:
+        x: Tensor,
+        hiddens: list[Tensor] | None = None
+    ) -> tuple[Tensor, list[Tensor]]:
 
-        for layer in self.layers:
-            x = layer(x)
+        next_hiddens: list[Tensor] = []
 
-        return x
+        for i, layer in enumerate(self.layers):
+
+            layer_hiddens: Tensor | None = None
+
+            if hiddens is not None:
+                layer_hiddens = hiddens[i]
+
+            x = layer(x, layer_hiddens)
+
+            next_hiddens.append(x[:, -1])
+
+        return x, next_hiddens
 
 # an improvised variant where stacked LRU has residual at each layer but gated with an LRU itself
+
+GatedLayerHidden = list[list[Tensor]]
 
 class GatedLightRecurrentUnit(ScriptModule):
     def __init__(
         self,
         dim,
+        *,
         depth = 1,
         learned_init_hidden = False,
         num_layers_per_depth = 2
@@ -141,7 +155,7 @@ class GatedLightRecurrentUnit(ScriptModule):
 
         layers = []
         for _ in range(depth):
-            layer = nn.Sequential(*[LightRecurrentUnitLayer(dim, learned_init_hidden = learned_init_hidden) for _ in range(num_layers_per_depth)])
+            layer = LightRecurrentUnit(dim, depth = num_layers_per_depth, learned_init_hidden = learned_init_hidden)
             layers.append(layer)
 
         self.layers = ModuleList(layers)
@@ -149,13 +163,26 @@ class GatedLightRecurrentUnit(ScriptModule):
     @script_method
     def forward(
         self,
-        x: Tensor
-    ) -> Tensor:
+        x: Tensor,
+        hiddens: GatedLayerHidden | None = None
+    ) -> tuple[Tensor, GatedLayerHidden]:
 
-        for layer in self.layers:
-            x = self.gate(layer(x), x)
+        next_hiddens: GatedLayerHidden = []
 
-        return x
+        for i, layer in enumerate(self.layers):
+
+            layer_hiddens: list[Tensor] | None = None
+
+            if hiddens is not None:
+                layer_hiddens = hiddens[i]
+
+            layer_out, layer_hiddens = layer(x, layer_hiddens)
+
+            next_hiddens.append(layer_hiddens)
+
+            x = self.gate(layer_out, x)
+
+        return x, next_hiddens
 
 # LRU Block
 
@@ -172,11 +199,12 @@ class LightRecurrentUnitBlock(Module):
     def __init__(
         self,
         dim,
+        *,
         depth = 1,
+        learned_init_hidden = True,
+        depth_gated_lru = True,
         has_ff_block = False,
         ff_expansion_factor = 4,
-        learned_init_hidden = False,
-        depth_gated_lru = True
     ):
         super().__init__()
         self.norm = RMSNorm(dim)
@@ -200,7 +228,9 @@ class LightRecurrentUnitBlock(Module):
         )
 
     def forward(self, x):
-        x = self.lru(self.norm(x)) + x
+        lru_out, _ = self.lru(self.norm(x))
+
+        x = lru_out + x
 
         if not self.has_ff_block:
             return x

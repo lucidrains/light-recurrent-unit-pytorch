@@ -49,7 +49,7 @@ lru = LightRecurrentUnit(256, depth = 4)
 
 x = torch.randn(2, 1024, 256)
 
-out = lru(x) # (2, 1024, 256)
+out, layer_hiddens = lru(x) # (2, 1024, 256), List[(2, 256)]
 
 assert out.shape == x.shape
 ```

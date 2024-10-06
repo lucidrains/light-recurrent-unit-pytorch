@@ -54,19 +54,38 @@ out, layer_hiddens = lru(x) # (2, 1024, 256), List[(2, 256)]
 assert out.shape == x.shape
 ```
 
+## Test
+
+Enwik8
+
+```bash
+$ python train.py
+```
+
 ## Citations
 
 ```bibtex
 @Article{electronics13163204,
-    AUTHOR = {Ye, Hong and Zhang, Yibing and Liu, Huizhou and Li, Xuannong and Chang, Jiaming and Zheng, Hui},
-    TITLE = {Light Recurrent Unit: Towards an Interpretable Recurrent Neural Network for Modeling Long-Range Dependency},
+    AUTHOR  = {Ye, Hong and Zhang, Yibing and Liu, Huizhou and Li, Xuannong and Chang, Jiaming and Zheng, Hui},
+    TITLE   = {Light Recurrent Unit: Towards an Interpretable Recurrent Neural Network for Modeling Long-Range Dependency},
     JOURNAL = {Electronics},
-    VOLUME = {13},
-    YEAR = {2024},
-    NUMBER = {16},
+    VOLUME  = {13},
+    YEAR    = {2024},
+    NUMBER  = {16},
     ARTICLE-NUMBER = {3204},
-    URL = {https://www.mdpi.com/2079-9292/13/16/3204},
-    ISSN = {2079-9292},
-    DOI = {10.3390/electronics13163204}
+    URL     = {https://www.mdpi.com/2079-9292/13/16/3204},
+    ISSN    = {2079-9292},
+    DOI     = {10.3390/electronics13163204}
+}
+```
+
+```bibtex
+@article{Merrill2024TheIO,
+    title   = {The Illusion of State in State-Space Models},
+    author  = {William Merrill and Jackson Petty and Ashish Sabharwal},
+    journal = {ArXiv},
+    year    = {2024},
+    volume  = {abs/2404.08819},
+    url     = {https://api.semanticscholar.org/CorpusID:269149086}
 }
 ```

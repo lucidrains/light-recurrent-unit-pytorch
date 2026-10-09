@@ -1,10 +1,11 @@
 from __future__ import annotations
 
+import einx
 import torch
 from torch import nn, Tensor
 import torch.nn.functional as F
 from torch.nn import Linear, Module, ModuleList
-from torch.jit import ScriptModule, script_method
+from torch_einops_utils.shape import shape, size
 
 # helpers
 
@@ -16,22 +17,34 @@ def default(v, d):
 
 # a single LRU cell
 
-class LightRecurrentUnitCell(ScriptModule):
+class LightRecurrentUnitCell(Module):
     def __init__(
         self,
         dim,
         dim_hidden = None,
         *,
+        heads = 1,
         proj_input = True,
         learned_init_hidden = False
     ):
         super().__init__()
         dim_hidden = default(dim_hidden, dim)
 
-        self.to_next_hidden = nn.Sequential(Linear(dim, dim_hidden, bias = False), nn.Tanh()) if proj_input else nn.Identity()
+        assert heads >= 1
+        assert proj_input or heads == 1, 'heads > 1 requires the input projection'
+
+        self.heads = heads
+        self.dim_hidden = dim_hidden
+        self.is_multi_head = heads > 1
+
+        self.to_next_hidden = nn.Sequential(Linear(dim, heads * dim_hidden, bias = False), nn.Tanh()) if proj_input else nn.Identity()
 
         self.to_input_forget = Linear(dim, dim_hidden, bias = False)
         self.to_hidden_forget = Linear(dim_hidden, dim_hidden)
+
+        # multi head - softmax selection over the candidates
+
+        self.to_attn = Linear(heads * dim_hidden, heads, bias = False) if self.is_multi_head else None
 
         # initial hidden
 
@@ -42,19 +55,38 @@ class LightRecurrentUnitCell(ScriptModule):
         else:
             self.register_buffer('init_hidden', init_hidden)
 
-    @script_method
     def forward(
         self,
         x: Tensor,
         hidden: Tensor | None = None
     ) -> Tensor:
 
-        if hidden is None:
-            hidden = self.init_hidden
+        next_hidden, input_forget = self.project_input(x)
+        return self.forward_step(next_hidden, input_forget, hidden)
 
+    def project_input(self, x: Tensor) -> tuple[Tensor, Tensor]:
         # derive the next hidden as well as the forget gate contribution from the input
 
         next_hidden, input_forget = self.to_next_hidden(x), self.to_input_forget(x)
+
+        # multi head - softmax select over the candidates
+
+        if self.is_multi_head:
+            attn = self.to_attn(next_hidden).softmax(dim = -1)
+            weighted = einx.multiply('... k, ... (k d) -> ... k d', attn, next_hidden, k = self.heads)
+            next_hidden = einx.sum('... k d -> ... d', weighted)
+
+        return next_hidden, input_forget
+
+    def forward_step(
+        self,
+        next_hidden: Tensor,
+        input_forget: Tensor,
+        hidden: Tensor | None = None
+    ) -> Tensor:
+
+        if not exists(hidden):
+            hidden = self.init_hidden
 
         # get the forget gate contribution from previous hidden
 
@@ -66,25 +98,23 @@ class LightRecurrentUnitCell(ScriptModule):
 
         # next hidden = hidden * (1. - forget_gate) + next_hidden * forget_gate
 
-        next_hidden = hidden.lerp(next_hidden, forget_gate)
-
-        return next_hidden
+        return hidden.lerp(next_hidden, forget_gate)
 
 # LRU layer
 
-class LightRecurrentUnitLayer(ScriptModule):
+class LightRecurrentUnitLayer(Module):
     def __init__(
         self,
         dim,
         dim_hidden = None,
         *,
+        heads = 1,
         proj_input = True,
         learned_init_hidden = False
     ):
         super().__init__()
-        self.cell = LightRecurrentUnitCell(dim, dim_hidden, proj_input = proj_input, learned_init_hidden = learned_init_hidden)
+        self.cell = LightRecurrentUnitCell(dim, dim_hidden, heads = heads, proj_input = proj_input, learned_init_hidden = learned_init_hidden)
 
-    @script_method
     def forward(
         self,
         x: Tensor,
@@ -93,23 +123,32 @@ class LightRecurrentUnitLayer(ScriptModule):
 
         # batch first always (batch, time, dim)
 
-        inputs = x.unbind(dim = 1)
-        next_hiddens: list[Tensor] = []
+        batch, time = shape(x, 'b t _ -> b t')
 
-        for timestep_input in inputs:
-            hidden = self.cell(timestep_input, hidden)
-            next_hiddens.append(hidden)
+        # derive all input dependent quantities for the entire sequence at once
 
-        return torch.stack(next_hiddens, dim = 1)
+        next_hiddens, input_forgets = self.cell.project_input(x)
+
+        # recurrent roll out, only hidden dependent quantities remain in the loop
+
+        dim_hidden = size(next_hiddens, 'b t d -> d')
+        out = x.new_empty(batch, time, dim_hidden)
+
+        for step, (next_hidden, input_forget) in enumerate(zip(next_hiddens.unbind(dim = 1), input_forgets.unbind(dim = 1))):
+            hidden = self.cell.forward_step(next_hidden, input_forget, hidden)
+            out[:, step] = hidden
+
+        return out
 
 # Stacked LRU
 
-class LightRecurrentUnit(ScriptModule):
+class LightRecurrentUnit(Module):
     def __init__(
         self,
         dim,
         *,
         depth = 1,
+        heads = 1,
         proj_input: bool | tuple[bool, ...] = True,
         learned_init_hidden = False
     ):
@@ -120,22 +159,21 @@ class LightRecurrentUnit(ScriptModule):
 
         assert len(proj_input) == depth
 
-        self.layers = ModuleList([LightRecurrentUnitLayer(dim, proj_input = layer_proj_input, learned_init_hidden = learned_init_hidden) for layer_proj_input in proj_input])
+        self.layers = ModuleList([LightRecurrentUnitLayer(dim, heads = heads, proj_input = layer_proj_input, learned_init_hidden = learned_init_hidden) for layer_proj_input in proj_input])
 
-    @script_method
     def forward(
         self,
         x: Tensor,
         hiddens: list[Tensor] | None = None
     ) -> tuple[Tensor, list[Tensor]]:
 
-        next_hiddens: list[Tensor] = []
+        next_hiddens = []
 
         for i, layer in enumerate(self.layers):
 
-            layer_hiddens: Tensor | None = None
+            layer_hiddens = None
 
-            if hiddens is not None:
+            if exists(hiddens):
                 layer_hiddens = hiddens[i]
 
             x = layer(x, layer_hiddens)
@@ -146,41 +184,39 @@ class LightRecurrentUnit(ScriptModule):
 
 # an improvised variant where stacked LRU has residual at each layer but gated with an LRU itself
 
-GatedLayerHidden = list[list[Tensor]]
-
-class GatedLightRecurrentUnit(ScriptModule):
+class GatedLightRecurrentUnit(Module):
     def __init__(
         self,
         dim,
         *,
         depth = 1,
+        heads = 1,
         learned_init_hidden = False,
         num_layers_per_depth = 2
     ):
         super().__init__()
-        self.gate = LightRecurrentUnitCell(dim)
+        self.gate = LightRecurrentUnitCell(dim, heads = heads)
 
         layers = []
         for _ in range(depth):
-            layer = LightRecurrentUnit(dim, depth = num_layers_per_depth, learned_init_hidden = learned_init_hidden)
+            layer = LightRecurrentUnit(dim, depth = num_layers_per_depth, heads = heads, learned_init_hidden = learned_init_hidden)
             layers.append(layer)
 
         self.layers = ModuleList(layers)
 
-    @script_method
     def forward(
         self,
         x: Tensor,
-        hiddens: GatedLayerHidden | None = None
-    ) -> tuple[Tensor, GatedLayerHidden]:
+        hiddens: list[list[Tensor]] | None = None
+    ) -> tuple[Tensor, list[list[Tensor]]]:
 
-        next_hiddens: GatedLayerHidden = []
+        next_hiddens = []
 
         for i, layer in enumerate(self.layers):
 
-            layer_hiddens: list[Tensor] | None = None
+            layer_hiddens = None
 
-            if hiddens is not None:
+            if exists(hiddens):
                 layer_hiddens = hiddens[i]
 
             layer_out, layer_hiddens = layer(x, layer_hiddens)
@@ -208,6 +244,7 @@ class LightRecurrentUnitBlock(Module):
         dim,
         *,
         depth = 1,
+        heads = 1,
         learned_init_hidden = True,
         depth_gated_lru = True,
         has_ff_block = False,
@@ -218,7 +255,7 @@ class LightRecurrentUnitBlock(Module):
 
         lru_klass = GatedLightRecurrentUnit if depth_gated_lru else LightRecurrentUnit
 
-        self.lru = lru_klass(dim = dim, depth = depth, learned_init_hidden = learned_init_hidden)
+        self.lru = lru_klass(dim = dim, depth = depth, heads = heads, learned_init_hidden = learned_init_hidden)
 
         self.has_ff_block = has_ff_block
 

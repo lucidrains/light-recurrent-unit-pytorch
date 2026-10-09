@@ -1,6 +1,6 @@
 [project]
 name = "light-recurrent-unit-pytorch"
-version = "0.1.1"
+version = "0.1.4"
 description = "Light Recurrent Unit"
 authors = [
     { name = "Phil Wang", email = "lucidrains@gmail.com" }
@@ -23,7 +23,9 @@ classifiers=[
 ]
 
 dependencies = [
+    "einx>=0.3.0",
     "torch>=2.0",
+    "torch-einops-utils>=0.1.36",
 ]
 
 [project.urls]
@@ -36,6 +38,11 @@ test = [
     "pytest"
 ]
 
+[dependency-groups]
+dev = [
+    "pytest"
+]
+
 [tool.pytest.ini_options]
 pythonpath = [
   "."
@@ -45,12 +52,16 @@ pythonpath = [
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
-[tool.rye]
-managed = true
-dev-dependencies = []
-
 [tool.hatch.metadata]
 allow-direct-references = true
 
 [tool.hatch.build.targets.wheel]
 packages = ["light_recurrent_unit_pytorch"]
+
+[tool.hatch.build.targets.sdist]
+only-include = [
+    "light_recurrent_unit_pytorch",
+    "README.md",
+    "LICENSE",
+    "pyproject.toml"
+]

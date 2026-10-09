@@ -54,6 +54,23 @@ out, layer_hiddens = lru(x) # (2, 1024, 256), List[(2, 256)]
 assert out.shape == x.shape
 ```
 
+Multi head
+
+With `heads` > 1, the `K` parallel candidates are softmax selected before the gate, as in <a href="https://doi.org/10.1007/s00521-026-12526-w">this paper</a>
+
+```python
+import torch
+from light_recurrent_unit_pytorch import LightRecurrentUnit
+
+lru = LightRecurrentUnit(256, depth = 4, heads = 4)
+
+x = torch.randn(2, 1024, 256)
+
+out, layer_hiddens = lru(x) # (2, 1024, 256), List[(2, 256)]
+
+assert out.shape == x.shape
+```
+
 ## Test
 
 Enwik8
